@@ -1,0 +1,19 @@
+{
+  "files": [
+    {
+      "path": "memory.json",
+      "type": "memory",
+      "sequence": 1,
+      "lineCount": 0,
+      "lastModified": "2025-02-13T14:45:54.881Z"
+    },
+    {
+      "path": "lesson.json",
+      "type": "lesson",
+      "sequence": 1,
+      "lineCount": 0,
+      "lastModified": "2025-02-13T14:45:54.881Z"
+    }
+  ],
+  "lastUpdated": "2025-02-13T14:45:54.881Z"
+}

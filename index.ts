@@ -757,6 +757,45 @@ class KnowledgeGraphManager {
     return lesson;
   }
 
+  // Helper function to calculate string similarity score (0-1)
+  private calculateSimilarity(str1: string, str2: string): number {
+    const s1 = str1.toLowerCase();
+    const s2 = str2.toLowerCase();
+
+    // Exact match
+    if (s1 === s2) return 1;
+
+    // Contains full string
+    if (s1.includes(s2) || s2.includes(s1)) return 0.8;
+
+    // Split into words and check for word matches
+    const words1 = s1.split(/\s+/);
+    const words2 = s2.split(/\s+/);
+
+    const commonWords = words1.filter(w => words2.includes(w));
+    if (commonWords.length > 0) {
+      return 0.5 * (commonWords.length / Math.max(words1.length, words2.length));
+    }
+
+    // Partial word matches
+    const partialMatches = words1.filter(w1 =>
+      words2.some(w2 => w1.includes(w2) || w2.includes(w1))
+    );
+
+    return 0.3 * (partialMatches.length / Math.max(words1.length, words2.length));
+  }
+
+  // Helper function to get related lessons
+  private async getRelatedLessons(lessonName: string): Promise<string[]> {
+    const graph = await this.loadGraph();
+    return graph.relations
+      .filter(r =>
+        (r.from === lessonName || r.to === lessonName) &&
+        ['is related to', 'shares context with', 'similar to'].includes(r.relationType)
+      )
+      .map(r => r.from === lessonName ? r.to : r.from);
+  }
+
   async findSimilarErrors(errorPattern: ErrorPattern): Promise<LessonEntity[]> {
     const graph = await this.loadGraph();
 
@@ -804,23 +843,63 @@ class KnowledgeGraphManager {
   }
 
   async getLessonRecommendations(context: string): Promise<LessonEntity[]> {
-    const graph = await this.loadGraph();
+    // Load all files containing lessons
+    const lessonFiles = await this.fileManager.getFilesForEntityType('lesson');
+    const allLessons: LessonEntity[] = [];
 
-    return graph.entities
-      .filter((e): e is LessonEntity => {
-        if (e.entityType !== 'lesson') return false;
-        const lessonEntity = e as Partial<LessonEntity>;
-        return (
-          lessonEntity.errorPattern !== undefined &&
-          (
-            lessonEntity.errorPattern.type.toLowerCase().includes(context.toLowerCase()) ||
-            lessonEntity.errorPattern.message.toLowerCase().includes(context.toLowerCase()) ||
-            lessonEntity.errorPattern.context.toLowerCase().includes(context.toLowerCase()) ||
-            e.observations.some(o => o.toLowerCase().includes(context.toLowerCase()))
-          )
+    // Load and merge lessons from all files
+    for (const filePath of lessonFiles) {
+      try {
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        const fileGraph = JSON.parse(fileContent);
+        const lessons = fileGraph.entities.filter((e: Entity): e is LessonEntity =>
+          e.entityType === 'lesson'
         );
+        allLessons.push(...lessons);
+      } catch (error) {
+        console.error(`Error loading lessons from ${filePath}:`, error);
+      }
+    }
+
+    // Calculate relevance scores for each lesson
+    const scoredLessons = await Promise.all(
+      allLessons.map(async (lesson) => {
+        let score = 0;
+
+        // Check error pattern fields
+        if (lesson.errorPattern) {
+          score += this.calculateSimilarity(lesson.errorPattern.type, context) * 0.3;
+          score += this.calculateSimilarity(lesson.errorPattern.message, context) * 0.3;
+          score += this.calculateSimilarity(lesson.errorPattern.context, context) * 0.2;
+        }
+
+        // Check observations
+        const observationScores = lesson.observations.map(obs =>
+          this.calculateSimilarity(obs, context)
+        );
+        if (observationScores.length > 0) {
+          score += Math.max(...observationScores) * 0.2;
+        }
+
+        // Check related lessons
+        const relatedLessons = await this.getRelatedLessons(lesson.name);
+        if (relatedLessons.length > 0) {
+          score *= 1.2; // Boost score for lessons with relations
+        }
+
+        // Consider success rate
+        const successRate = lesson.metadata?.successRate ?? 0;
+        score *= (1 + successRate) / 2; // Weight by success rate
+
+        return { lesson, score };
       })
-      .sort((a, b) => (b.metadata?.successRate ?? 0) - (a.metadata?.successRate ?? 0));
+    );
+
+    // Filter lessons with a minimum relevance score and sort by score
+    return scoredLessons
+      .filter(({ score }) => score > 0.1) // Minimum relevance threshold
+      .sort((a, b) => b.score - a.score)
+      .map(({ lesson }) => lesson);
   }
 
   async recover(): Promise<void> {

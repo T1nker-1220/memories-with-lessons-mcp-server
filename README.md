@@ -1,5 +1,9 @@
 # Knowledge Graph Memory Server
+[![smithery badge](https://smithery.ai/badge/@T1nker-1220/memories-with-lessons-mcp-server)](https://smithery.ai/server/@T1nker-1220/memories-with-lessons-mcp-server)
+
 A basic implementation of persistent memory using a local knowledge graph. This lets Claude remember information about the user across chats and learn from past errors through a lesson system.
+
+<a href="https://glama.ai/mcp/servers/eoinvr1bz0"><img width="380" height="200" src="https://glama.ai/mcp/servers/eoinvr1bz0/badge" alt="Knowledge Graph Memory Server MCP server" /></a>
 
 ## Core Concepts
 
